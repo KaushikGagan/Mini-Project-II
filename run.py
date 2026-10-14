@@ -1,3 +1,5 @@
+import os
+
 import click
 
 from backend.app import create_app
@@ -26,5 +28,8 @@ def create_admin(name, email, employee_id, password):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    debug = os.getenv("FLASK_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
+    # Keep the development server in one process. The debug reloader starts a
+    # second interpreter, which can make startup look stuck on some Windows setups.
+    app.run(debug=debug, use_reloader=False)
 
