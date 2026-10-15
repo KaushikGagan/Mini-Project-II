@@ -1,12 +1,15 @@
 import re
+import smtplib
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, session, url_for
+from flask_mail import Message
+from email_validator import EmailNotValidError, validate_email
 from sqlalchemy import or_
 
-from ..extensions import db
+from ..extensions import db, mail
 from ..models import Administrator, Citizen
 from ..services.audit_service import write_audit
-from ..services.otp_service import generate_registration_otp, verify_registration_otp
+from ..services.otp_service import generate_registration_otp, resend_cooldown_remaining, verify_registration_otp
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 AADHAAR_RE = re.compile(r"^[2-9][0-9]{11}$")
@@ -52,19 +55,34 @@ def register():
 @auth_bp.post("/request-otp")
 def request_otp():
     email = request.form.get("email", "").strip().lower()
-    if "@" not in email:
-        if request.accept_mimetypes.best == "application/json":
-            return jsonify(ok=False, message="Enter a valid email address before requesting an OTP."), 400
-        flash("Enter a valid email address before requesting an OTP.", "error")
-        return redirect(url_for("auth.register"))
+    try:
+        email = validate_email(email, check_deliverability=False).normalized
+    except EmailNotValidError:
+        return jsonify(ok=False, message="Enter a valid email address before requesting an OTP."), 400
+    cooldown = resend_cooldown_remaining(email)
+    if cooldown:
+        return jsonify(ok=False, message=f"Please wait {cooldown} seconds before requesting another OTP.", retry_after=cooldown), 429
+    if not all([current_app.config.get("MAIL_USERNAME"), current_app.config.get("MAIL_PASSWORD"), current_app.config.get("MAIL_DEFAULT_SENDER")]):
+        return jsonify(ok=False, message="Email delivery is not configured yet. Contact the system administrator."), 503
     otp = generate_registration_otp(email)
-    # Development-only delivery channel. Production will replace this with email/SMS.
-    print(f"\n[DEVELOPMENT OTP] Registration code for {email}: {otp}\n", flush=True)
-    current_app.logger.warning("Development registration OTP for %s: %s", email, otp)
-    if request.accept_mimetypes.best == "application/json":
-        return jsonify(ok=True, message="OTP generated. Check the Flask terminal during development.")
-    flash("OTP generated. Check the Flask terminal during development.", "success")
-    return redirect(url_for("auth.register"))
+    message = Message(
+        subject="Government Document Management System - Email Verification",
+        recipients=[email],
+        body=("Hello,\n\nYour One-Time Password (OTP) for registration is:\n\n"
+              f"{otp}\n\nThis OTP is valid for 10 minutes.\n\nDo not share this OTP with anyone.\n\n"
+              "Regards,\n\nGovernment Document Management System"),
+    )
+    try:
+        mail.send(message)
+    except (smtplib.SMTPException, OSError, ConnectionError) as error:
+        session.pop("registration_otp", None)
+        current_app.logger.error("OTP email delivery failed: %s", type(error).__name__)
+        return jsonify(ok=False, message="We could not send the OTP email. Please try again later."), 503
+    except Exception as error:
+        session.pop("registration_otp", None)
+        current_app.logger.error("Unexpected OTP email failure: %s", type(error).__name__)
+        return jsonify(ok=False, message="We could not send the OTP email. Please try again later."), 503
+    return jsonify(ok=True, message="OTP has been sent to your email.", cooldown=60)
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])

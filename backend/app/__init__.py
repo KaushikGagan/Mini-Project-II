@@ -3,7 +3,7 @@ from pathlib import Path
 from flask import Flask, render_template
 
 from config import Config
-from .extensions import db, migrate
+from .extensions import db, mail, migrate
 
 
 def create_app(config_object=Config):
@@ -15,6 +15,7 @@ def create_app(config_object=Config):
 
     db.init_app(app)
     migrate.init_app(app, db)
+    mail.init_app(app)
 
     from .routes.admin import admin_bp
     from .routes.auth import auth_bp

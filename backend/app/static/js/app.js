@@ -1,45 +1,50 @@
-// Progressive enhancement only: Flask remains the source of truth for OTPs and sessions.
+// Flask remains the source of truth for OTPs and session state.
 document.addEventListener("DOMContentLoaded", () => {
-  const requestOtpButton = document.querySelector("#request-otp");
+  const sendButton = document.querySelector("#request-otp");
+  const resendButton = document.querySelector("#resend-otp");
   const emailInput = document.querySelector('input[name="email"]');
+  if (!sendButton || !resendButton || !emailInput) return;
 
-  if (!requestOtpButton || !emailInput) return;
+  const popup = (icon, title, text) => Swal.fire({icon, title, text, background: "#111827", color: "#fff", confirmButtonColor: "#2563eb"});
+  const startCooldown = (seconds) => {
+    let remaining = seconds;
+    resendButton.hidden = false;
+    sendButton.disabled = true;
+    resendButton.disabled = true;
+    const update = () => { resendButton.textContent = remaining ? `Resend OTP (${remaining}s)` : "Resend OTP"; };
+    update();
+    const timer = window.setInterval(() => {
+      remaining -= 1;
+      update();
+      if (remaining <= 0) {
+        window.clearInterval(timer);
+        sendButton.disabled = false;
+        resendButton.disabled = false;
+      }
+    }, 1000);
+  };
 
-  requestOtpButton.addEventListener("click", async () => {
+  const sendOtp = async () => {
     const email = emailInput.value.trim();
-    requestOtpButton.disabled = true;
-    requestOtpButton.textContent = "Generating…";
-
+    sendButton.disabled = true;
+    resendButton.disabled = true;
     try {
-      const response = await fetch("/auth/request-otp", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({ email }),
-      });
+      const response = await fetch("/auth/request-otp", {method: "POST", headers: {Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams({email})});
       const data = await response.json();
-      await Swal.fire({
-        icon: data.ok ? "success" : "error",
-        title: data.ok ? "OTP generated" : "Email required",
-        text: data.message,
-        background: "#111827",
-        color: "#fff",
-        confirmButtonColor: "#2563eb",
-      });
+      if (!response.ok) {
+        await popup("error", "Unable to send OTP", data.message);
+        if (data.retry_after) startCooldown(data.retry_after);
+        else sendButton.disabled = false;
+        return;
+      }
+      await popup("success", "OTP sent", data.message);
+      startCooldown(data.cooldown || 60);
     } catch (_error) {
-      await Swal.fire({
-        icon: "error",
-        title: "OTP request failed",
-        text: "Unable to contact the server. Please try again.",
-        background: "#111827",
-        color: "#fff",
-        confirmButtonColor: "#2563eb",
-      });
-    } finally {
-      requestOtpButton.disabled = false;
-      requestOtpButton.textContent = "Request OTP";
+      await popup("error", "OTP request failed", "Unable to contact the server. Please try again.");
+      sendButton.disabled = false;
+      resendButton.disabled = false;
     }
-  });
+  };
+  sendButton.addEventListener("click", sendOtp);
+  resendButton.addEventListener("click", sendOtp);
 });
