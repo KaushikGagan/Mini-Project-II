@@ -1,15 +1,18 @@
 """Final PDF preparation and recoverable certificate issuance."""
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+
 from flask import current_app
-from pypdf import PdfWriter, PdfReader
+from PIL import Image as PilImage
+from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
-from PIL import Image as PilImage
+
 from ..extensions import db
 from ..models import Certificate
 from .fabric_gateway_service import FabricGatewayError, FabricUnavailable, get_certificate, register_certificate
@@ -18,46 +21,40 @@ from .qr_service import create_certificate_qr, verification_url
 
 class CertificateIssuanceError(RuntimeError): pass
 
-# Colours
 _NAVY   = colors.HexColor("#0D2137")
-_GOLD   = colors.HexColor("#B8860B")
 _LGOLD  = colors.HexColor("#D4AF37")
 _CREAM  = colors.HexColor("#FFFDF5")
 _DKGRAY = colors.HexColor("#374151")
 _LTGRAY = colors.HexColor("#9CA3AF")
 _WHITE  = colors.white
 
+
 def _document_id(certificate_type):
-    abbr = ''.join(c for c in ''.join(word[0] for word in certificate_type.split()).upper() if c.isalpha())
+    abbr = ''.join(c for c in ''.join(w[0] for w in certificate_type.split()).upper() if c.isalpha())
     return f"GOV-{abbr}-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}"
 
 
 def _draw_goi_emblem(pdf, cx, cy, r=14):
-    """Draw a simplified Ashoka-style circular emblem in gold."""
-    # Outer ring
-    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(1.5)
-    pdf.circle(cx, cy, r*mm, stroke=1, fill=0)
-    pdf.circle(cx, cy, (r-2)*mm, stroke=1, fill=0)
-    # Spokes (24 Ashoka chakra spokes)
-    import math
+    pdf.setStrokeColor(_LGOLD)
+    pdf.setLineWidth(1.5)
+    pdf.circle(cx, cy, r * mm, stroke=1, fill=0)
+    pdf.circle(cx, cy, (r - 2) * mm, stroke=1, fill=0)
     pdf.setLineWidth(0.6)
     for i in range(24):
         angle = math.radians(i * 15)
-        x1 = cx + (r-2)*mm * math.cos(angle)
-        y1 = cy + (r-2)*mm * math.sin(angle)
-        x2 = cx + 4*mm * math.cos(angle)
-        y2 = cy + 4*mm * math.sin(angle)
+        x1 = cx + (r - 2) * mm * math.cos(angle)
+        y1 = cy + (r - 2) * mm * math.sin(angle)
+        x2 = cx + 4 * mm * math.cos(angle)
+        y2 = cy + 4 * mm * math.sin(angle)
         pdf.line(x1, y1, x2, y2)
-    # Inner hub
     pdf.setFillColor(_LGOLD)
-    pdf.circle(cx, cy, 3.5*mm, stroke=0, fill=1)
-    # "INDIA" text below emblem
-    pdf.setFillColor(_NAVY); pdf.setFont("Helvetica-Bold", 6)
-    pdf.drawCentredString(cx, cy - (r+4)*mm, "INDIA")
+    pdf.circle(cx, cy, 3.5 * mm, stroke=0, fill=1)
+    pdf.setFillColor(_NAVY)
+    pdf.setFont("Helvetica-Bold", 6)
+    pdf.drawCentredString(cx, cy - (r + 4) * mm, "INDIA")
 
 
 def _wrap_text(pdf, text, x, y, max_width, font, size, line_height):
-    """Draw wrapped text, return final y."""
     pdf.setFont(font, size)
     line = ""
     for word in text.split():
@@ -78,77 +75,87 @@ def _render_final_pdf(application, administrator, document_id, output_path, qr_p
     issued_at = datetime.now(timezone.utc)
     pdf = canvas.Canvas(str(output_path), pagesize=A4)
     width, height = A4
-    pdf.setTitle(f"{application.certificate_type} — {document_id}")
+    pdf.setTitle(f"{application.certificate_type} - {document_id}")
 
-    # ── Background ──────────────────────────────────────────────────────────
+    # Background
     pdf.setFillColor(_CREAM)
     pdf.rect(0, 0, width, height, stroke=0, fill=1)
 
-    # ── Outer decorative border (double line) ────────────────────────────────
-    pdf.setStrokeColor(_NAVY); pdf.setLineWidth(3)
-    pdf.rect(10*mm, 10*mm, width-20*mm, height-20*mm, stroke=1, fill=0)
-    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(1)
-    pdf.rect(13*mm, 13*mm, width-26*mm, height-26*mm, stroke=1, fill=0)
+    # Outer border - navy thick
+    pdf.setStrokeColor(_NAVY)
+    pdf.setLineWidth(3)
+    pdf.rect(10 * mm, 10 * mm, width - 20 * mm, height - 20 * mm, stroke=1, fill=0)
 
-    # ── Header band ─────────────────────────────────────────────────────────
+    # Inner border - gold thin
+    pdf.setStrokeColor(_LGOLD)
+    pdf.setLineWidth(1)
+    pdf.rect(13 * mm, 13 * mm, width - 26 * mm, height - 26 * mm, stroke=1, fill=0)
+
+    # Header band
     pdf.setFillColor(_NAVY)
-    pdf.rect(10*mm, height-42*mm, width-20*mm, 29*mm, stroke=0, fill=1)
+    pdf.rect(10 * mm, height - 42 * mm, width - 20 * mm, 29 * mm, stroke=0, fill=1)
 
-    # GoI emblem (left of header)
-    _draw_goi_emblem(pdf, 30*mm, height-27.5*mm, r=11)
+    # GoI emblems on both sides
+    _draw_goi_emblem(pdf, 30 * mm, height - 27.5 * mm, r=11)
+    _draw_goi_emblem(pdf, width - 30 * mm, height - 27.5 * mm, r=11)
 
     # Header text
     pdf.setFillColor(_WHITE)
     pdf.setFont("Helvetica-Bold", 13)
-    pdf.drawCentredString(width/2, height-22*mm, "GOVERNMENT OF INDIA")
+    pdf.drawCentredString(width / 2, height - 22 * mm, "GOVERNMENT OF INDIA")
     pdf.setFillColor(_LGOLD)
     pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawCentredString(width/2, height-29*mm, "MINISTRY OF CITIZEN SERVICES & DOCUMENT MANAGEMENT")
+    pdf.drawCentredString(width / 2, height - 29 * mm, "MINISTRY OF CITIZEN SERVICES & DOCUMENT MANAGEMENT")
     pdf.setFillColor(_WHITE)
     pdf.setFont("Helvetica", 7.5)
-    pdf.drawCentredString(width/2, height-35*mm, "Department of Citizen Services  |  e-Governance Division")
+    pdf.drawCentredString(width / 2, height - 35 * mm, "Department of Citizen Services  |  e-Governance Division")
 
-    # GoI emblem (right mirror)
-    _draw_goi_emblem(pdf, width-30*mm, height-27.5*mm, r=11)
+    # Gold divider
+    pdf.setStrokeColor(_LGOLD)
+    pdf.setLineWidth(1.5)
+    pdf.line(18 * mm, height - 45 * mm, width - 18 * mm, height - 45 * mm)
 
-    # ── Gold divider line ────────────────────────────────────────────────────
-    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(1.5)
-    pdf.line(18*mm, height-45*mm, width-18*mm, height-45*mm)
-
-    # ── Certificate title ────────────────────────────────────────────────────
+    # Certificate title
     pdf.setFillColor(_NAVY)
     pdf.setFont("Helvetica-Bold", 18)
-    pdf.drawCentredString(width/2, height-56*mm, application.certificate_type.upper())
-    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(0.8)
+    pdf.drawCentredString(width / 2, height - 56 * mm, application.certificate_type.upper())
     title_w = stringWidth(application.certificate_type.upper(), "Helvetica-Bold", 18)
-    pdf.line(width/2 - title_w/2, height-58.5*mm, width/2 + title_w/2, height-58.5*mm)
+    pdf.setStrokeColor(_LGOLD)
+    pdf.setLineWidth(0.8)
+    pdf.line(width / 2 - title_w / 2, height - 58.5 * mm, width / 2 + title_w / 2, height - 58.5 * mm)
 
     # Cert number
-    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 8)
-    pdf.drawCentredString(width/2, height-63*mm, f"Certificate No: CERT-{issued_at:%Y%m%d}-{application.application_id:06d}")
+    pdf.setFillColor(_DKGRAY)
+    pdf.setFont("Helvetica", 8)
+    pdf.drawCentredString(width / 2, height - 63 * mm, f"Certificate No: CERT-{issued_at:%Y%m%d}-{application.application_id:06d}")
 
-    # ── Details table ────────────────────────────────────────────────────────
-    lx, vx, row_h = 22*mm, 75*mm, 9*mm
-    y = height - 76*mm
+    # Details table
+    lx, vx, row_h = 22 * mm, 75 * mm, 9 * mm
+    y = height - 76 * mm
     rows = [
-        ("Document ID",       document_id),
-        ("Citizen Name",      application.citizen.full_name),
-        ("Certificate Type",  application.certificate_type),
-        ("Application Ref",   application.reference_number),
-        ("Date of Issue",     issued_at.strftime("%d %B %Y")),
+        ("Document ID",      document_id),
+        ("Citizen Name",     application.citizen.full_name),
+        ("Certificate Type", application.certificate_type),
+        ("Application Ref",  application.reference_number),
+        ("Date of Issue",    issued_at.strftime("%d %B %Y")),
     ]
     for label, value in rows:
-        pdf.setFillColor(_NAVY);   pdf.setFont("Helvetica-Bold", 9.5); pdf.drawString(lx, y, label + ":")
-        pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 9.5);      pdf.drawString(vx, y, value)
+        pdf.setFillColor(_NAVY)
+        pdf.setFont("Helvetica-Bold", 9.5)
+        pdf.drawString(lx, y, label + ":")
+        pdf.setFillColor(_DKGRAY)
+        pdf.setFont("Helvetica", 9.5)
+        pdf.drawString(vx, y, value)
         y -= row_h
 
-    # ── Divider ──────────────────────────────────────────────────────────────
-    y -= 3*mm
-    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(0.6)
-    pdf.line(18*mm, y, width-18*mm, y)
-    y -= 7*mm
+    # Divider
+    y -= 3 * mm
+    pdf.setStrokeColor(_LGOLD)
+    pdf.setLineWidth(0.6)
+    pdf.line(18 * mm, y, width - 18 * mm, y)
+    y -= 7 * mm
 
-    # ── Body text ────────────────────────────────────────────────────────────
+    # Body text
     body = (
         f"This is to certify that {application.citizen.full_name} has submitted an application "
         f"for the issuance of a {application.certificate_type}. The application has been duly "
@@ -157,61 +164,68 @@ def _render_final_pdf(application, administrator, document_id, output_path, qr_p
         f"valid subject to the terms and conditions of the issuing authority."
     )
     pdf.setFillColor(_DKGRAY)
-    y = _wrap_text(pdf, body, 22*mm, y, width-44*mm, "Helvetica", 9.5, 6*mm)
+    y = _wrap_text(pdf, body, 22 * mm, y, width - 44 * mm, "Helvetica", 9.5, 6 * mm)
 
-    # ── Blockchain notice ────────────────────────────────────────────────────
-    y -= 4*mm
-    pdf.setFillColor(_NAVY); pdf.setFont("Helvetica-Bold", 8)
-    pdf.drawString(22*mm, y, "Blockchain Registration:")
-    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 8)
-    pdf.drawString(75*mm, y, "This certificate is immutably registered on Hyperledger Fabric.")
+    # Blockchain notice
+    y -= 4 * mm
+    pdf.setFillColor(_NAVY)
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(22 * mm, y, "Blockchain Registration:")
+    pdf.setFillColor(_DKGRAY)
+    pdf.setFont("Helvetica", 8)
+    pdf.drawString(75 * mm, y, "This certificate is immutably registered on Hyperledger Fabric.")
 
-    # ── Footer section ───────────────────────────────────────────────────────
-    footer_y = 52*mm
+    # Footer
+    footer_y = 52 * mm
 
-    # QR code (left) — white background box so QR is scannable
+    # QR code with white background
     pdf.setFillColor(_WHITE)
-    pdf.rect(20*mm, footer_y - 4*mm, 34*mm, 34*mm, stroke=0, fill=1)
-    pdf.drawImage(str(qr_path), 22*mm, footer_y - 2*mm, width=30*mm, height=30*mm, mask="auto")
-    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 6.5)
-    pdf.drawCentredString(37*mm, footer_y - 8*mm, "Scan to verify online")
+    pdf.rect(20 * mm, footer_y - 4 * mm, 34 * mm, 34 * mm, stroke=0, fill=1)
+    pdf.drawImage(str(qr_path), 22 * mm, footer_y - 2 * mm, width=30 * mm, height=30 * mm, mask="auto")
+    pdf.setFillColor(_DKGRAY)
+    pdf.setFont("Helvetica", 6.5)
+    pdf.drawCentredString(37 * mm, footer_y - 8 * mm, "Scan to verify online")
 
-    # Signature (right) — actual image
+    # Signature
     sig_path = Path(current_app.root_path) / "static" / "images" / "signature.jpeg"
-    sig_w, sig_h = 52*mm, 18*mm
-    sig_x = width - 22*mm - sig_w
-    sig_y = footer_y + 6*mm
+    sig_w, sig_h = 52 * mm, 18 * mm
+    sig_x = width - 22 * mm - sig_w
+    sig_y = footer_y + 6 * mm
     if sig_path.exists():
         pdf.drawImage(str(sig_path), sig_x, sig_y, width=sig_w, height=sig_h, mask="auto")
-    pdf.setStrokeColor(_NAVY); pdf.setLineWidth(0.6)
-    pdf.line(sig_x, sig_y - 1*mm, sig_x + sig_w, sig_y - 1*mm)
-    pdf.setFillColor(_NAVY); pdf.setFont("Helvetica-Bold", 8)
-    pdf.drawCentredString(sig_x + sig_w/2, sig_y - 5*mm, administrator.name)
-    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 7)
-    pdf.drawCentredString(sig_x + sig_w/2, sig_y - 9*mm, "Authorised Signatory")
-    pdf.drawCentredString(sig_x + sig_w/2, sig_y - 13*mm, "Department of Citizen Services, GoI")
-
-    # ── Bottom gold band ─────────────────────────────────────────────────────
+    pdf.setStrokeColor(_NAVY)
+    pdf.setLineWidth(0.6)
+    pdf.line(sig_x, sig_y - 1 * mm, sig_x + sig_w, sig_y - 1 * mm)
     pdf.setFillColor(_NAVY)
-    pdf.rect(10*mm, 10*mm, width-20*mm, 16*mm, stroke=0, fill=1)
-    pdf.setFillColor(_LGOLD); pdf.setFont("Helvetica-Bold", 7)
-    pdf.drawCentredString(width/2, 20*mm, "GOVERNMENT OF INDIA  —  DEPARTMENT OF CITIZEN SERVICES  —  e-GOVERNANCE DIVISION")
-    pdf.setFillColor(_WHITE); pdf.setFont("Helvetica", 6.5)
-    pdf.drawCentredString(width/2, 15*mm, f"Document ID: {document_id}  |  Verify at: {current_app.config['VERIFICATION_BASE_URL']}/verify")
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawCentredString(sig_x + sig_w / 2, sig_y - 5 * mm, administrator.name)
+    pdf.setFillColor(_DKGRAY)
+    pdf.setFont("Helvetica", 7)
+    pdf.drawCentredString(sig_x + sig_w / 2, sig_y - 9 * mm, "Authorised Signatory")
+    pdf.drawCentredString(sig_x + sig_w / 2, sig_y - 13 * mm, "Department of Citizen Services, GoI")
+
+    # Bottom navy band
+    pdf.setFillColor(_NAVY)
+    pdf.rect(10 * mm, 10 * mm, width - 20 * mm, 16 * mm, stroke=0, fill=1)
+    pdf.setFillColor(_LGOLD)
+    pdf.setFont("Helvetica-Bold", 7)
+    pdf.drawCentredString(width / 2, 20 * mm, "GOVERNMENT OF INDIA  -  DEPARTMENT OF CITIZEN SERVICES  -  e-GOVERNANCE DIVISION")
+    pdf.setFillColor(_WHITE)
+    pdf.setFont("Helvetica", 6.5)
+    pdf.drawCentredString(width / 2, 15 * mm, f"Document ID: {document_id}  |  Verify at: {current_app.config['VERIFICATION_BASE_URL']}/verify")
 
     pdf.save()
     return issued_at
 
+
 def _image_to_pdf(image_path: Path, output_path: Path):
-    """Convert an image file to a single-page PDF."""
     img = PilImage.open(image_path).convert("RGB")
     img.save(str(output_path), "PDF", resolution=150)
 
+
 def _merge_uploaded_and_verification(upload_path: Path, verification_pdf: Path, output_path: Path):
-    """Merge uploaded document (page 1) with verification page (page 2)."""
     writer = PdfWriter()
-    suffix = upload_path.suffix.lower()
-    if suffix == ".pdf":
+    if upload_path.suffix.lower() == ".pdf":
         for page in PdfReader(str(upload_path)).pages:
             writer.add_page(page)
     else:
@@ -225,9 +239,10 @@ def _merge_uploaded_and_verification(upload_path: Path, verification_pdf: Path, 
     with open(output_path, "wb") as f:
         writer.write(f)
 
+
 def prepare_final_certificate(application, administrator):
-    """Generate one final QR-embedded PDF, then hash its exact bytes."""
-    if application.certificate: return application.certificate
+    if application.certificate:
+        return application.certificate
     document_id = _document_id(application.certificate_type)
     folder = Path(current_app.config["GENERATED_CERTIFICATES_FOLDER"])
     verification_pdf = folder / f"verification_{document_id}.pdf"
@@ -241,27 +256,59 @@ def prepare_final_certificate(application, administrator):
         verification_pdf.unlink(missing_ok=True)
     else:
         verification_pdf.rename(output)
-    certificate = Certificate(application=application, document_id=document_id, pdf_path=output.name, qr_path=qr_path.name, issued_by=administrator, issued_date=issued_at, issuance_state="Blockchain Registration Pending")
+    certificate = Certificate(
+        application=application, document_id=document_id, pdf_path=output.name,
+        qr_path=qr_path.name, issued_by=administrator, issued_date=issued_at,
+        issuance_state="Blockchain Registration Pending"
+    )
     certificate.sha256_hash = calculate_file_sha256(output)
     db.session.add(certificate)
     return certificate
 
+
 def issue_certificate(application, administrator):
-    """Persist a pending state before Fabric; issue only after a committed response."""
-    certificate=prepare_final_certificate(application,administrator)
-    if certificate.issuance_state == "Issued": return certificate
-    application.status="Issuance Pending"; certificate.issuance_state="Blockchain Registration Pending"; certificate.issuance_attempts=(certificate.issuance_attempts or 0)+1; certificate.blockchain_error=None
+    certificate = prepare_final_certificate(application, administrator)
+    if certificate.issuance_state == "Issued":
+        return certificate
+    application.status = "Issuance Pending"
+    certificate.issuance_state = "Blockchain Registration Pending"
+    certificate.issuance_attempts = (certificate.issuance_attempts or 0) + 1
+    certificate.blockchain_error = None
     db.session.commit()
     try:
-        result=register_certificate(certificate,administrator); record=result["record"]
-        if record["sha256Hash"] != certificate.sha256_hash: raise CertificateIssuanceError("Document ID already exists with a different hash on Fabric.")
-        certificate.blockchain_transaction_id=record.get("transactionId") or result.get("transactionId"); certificate.blockchain_registered_at=datetime.now(timezone.utc); certificate.issuance_state="Issued"; certificate.blockchain_error=None; application.status="Issued"; db.session.commit(); return certificate
-    except (FabricUnavailable,FabricGatewayError,CertificateIssuanceError) as error:
-        db.session.rollback(); certificate=Certificate.query.filter_by(application_id=application.application_id).first(); certificate.issuance_state="Issuance Failed"; certificate.blockchain_error=str(error)[:2000]; certificate.application.status="Issuance Failed"; db.session.commit(); raise CertificateIssuanceError(str(error)) from error
+        result = register_certificate(certificate, administrator)
+        record = result["record"]
+        if record["sha256Hash"] != certificate.sha256_hash:
+            raise CertificateIssuanceError("Document ID already exists with a different hash on Fabric.")
+        certificate.blockchain_transaction_id = record.get("transactionId") or result.get("transactionId")
+        certificate.blockchain_registered_at = datetime.now(timezone.utc)
+        certificate.issuance_state = "Issued"
+        certificate.blockchain_error = None
+        application.status = "Issued"
+        db.session.commit()
+        return certificate
+    except (FabricUnavailable, FabricGatewayError, CertificateIssuanceError) as error:
+        db.session.rollback()
+        certificate = Certificate.query.filter_by(application_id=application.application_id).first()
+        certificate.issuance_state = "Issuance Failed"
+        certificate.blockchain_error = str(error)[:2000]
+        certificate.application.status = "Issuance Failed"
+        db.session.commit()
+        raise CertificateIssuanceError(str(error)) from error
+
 
 def reconcile_certificate(certificate):
-    record=get_certificate(certificate.document_id)["record"]
-    if record["sha256Hash"] != certificate.sha256_hash: raise CertificateIssuanceError("Existing Fabric record hash differs from the finalized PDF.")
-    certificate.blockchain_transaction_id=record.get("transactionId"); certificate.blockchain_registered_at=datetime.now(timezone.utc); certificate.issuance_state="Issued"; certificate.blockchain_error=None; certificate.application.status="Issued"; db.session.commit(); return certificate
+    record = get_certificate(certificate.document_id)["record"]
+    if record["sha256Hash"] != certificate.sha256_hash:
+        raise CertificateIssuanceError("Existing Fabric record hash differs from the finalized PDF.")
+    certificate.blockchain_transaction_id = record.get("transactionId")
+    certificate.blockchain_registered_at = datetime.now(timezone.utc)
+    certificate.issuance_state = "Issued"
+    certificate.blockchain_error = None
+    certificate.application.status = "Issued"
+    db.session.commit()
+    return certificate
 
-def certificate_verification_url(certificate): return verification_url(certificate.document_id)
+
+def certificate_verification_url(certificate):
+    return verification_url(certificate.document_id)

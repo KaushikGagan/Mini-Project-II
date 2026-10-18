@@ -4,7 +4,7 @@
     <p class="eyebrow">PUBLIC VERIFICATION</p>
     <h1>Verify a Certificate</h1>
     <p>Enter the Document ID printed on the certificate and upload the PDF to confirm it has not been tampered with.</p>
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" action="{{ url_for('verification.verify_form') }}" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Document ID
         <input name="document_id" value="{{ document_id or '' }}" placeholder="GOV-XXXX-YYYYMMDD-XXXXXXXX" required>
