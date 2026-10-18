@@ -34,24 +34,22 @@ def _document_id(certificate_type):
     return f"GOV-{abbr}-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}"
 
 
-def _draw_goi_emblem(pdf, cx, cy, r=14):
-    pdf.setStrokeColor(_LGOLD)
-    pdf.setLineWidth(1.5)
-    pdf.circle(cx, cy, r * mm, stroke=1, fill=0)
-    pdf.circle(cx, cy, (r - 2) * mm, stroke=1, fill=0)
-    pdf.setLineWidth(0.6)
-    for i in range(24):
-        angle = math.radians(i * 15)
-        x1 = cx + (r - 2) * mm * math.cos(angle)
-        y1 = cy + (r - 2) * mm * math.sin(angle)
-        x2 = cx + 4 * mm * math.cos(angle)
-        y2 = cy + 4 * mm * math.sin(angle)
-        pdf.line(x1, y1, x2, y2)
-    pdf.setFillColor(_LGOLD)
-    pdf.circle(cx, cy, 3.5 * mm, stroke=0, fill=1)
-    pdf.setFillColor(_NAVY)
-    pdf.setFont("Helvetica-Bold", 6)
-    pdf.drawCentredString(cx, cy - (r + 4) * mm, "INDIA")
+def _goi_emblem_path(app_root: Path) -> Path:
+    src = app_root / "static" / "images" / "goi_emblem.png"
+    dest = app_root / "static" / "images" / "goi_emblem_transparent.png"
+    if not dest.exists():
+        img = PilImage.open(src).convert("RGBA")
+        data = img.getdata()
+        new_data = []
+        for r, g, b, a in data:
+            # Make near-white pixels transparent
+            if r > 220 and g > 220 and b > 220:
+                new_data.append((r, g, b, 0))
+            else:
+                new_data.append((r, g, b, a))
+        img.putdata(new_data)
+        img.save(str(dest), "PNG")
+    return dest
 
 
 def _wrap_text(pdf, text, x, y, max_width, font, size, line_height):
@@ -91,47 +89,49 @@ def _render_final_pdf(application, administrator, document_id, output_path, qr_p
     pdf.setLineWidth(1)
     pdf.rect(13 * mm, 13 * mm, width - 26 * mm, height - 26 * mm, stroke=1, fill=0)
 
-    # Header band
+    # Header band — taller to fit logo + text comfortably
     pdf.setFillColor(_NAVY)
-    pdf.rect(10 * mm, height - 42 * mm, width - 20 * mm, 29 * mm, stroke=0, fill=1)
+    pdf.rect(10 * mm, height - 46 * mm, width - 20 * mm, 33 * mm, stroke=0, fill=1)
 
-    # GoI emblems on both sides
-    _draw_goi_emblem(pdf, 30 * mm, height - 27.5 * mm, r=11)
-    _draw_goi_emblem(pdf, width - 30 * mm, height - 27.5 * mm, r=11)
+    # GoI emblem — left side, vertically centered in header
+    emblem_path = _goi_emblem_path(Path(current_app.root_path))
+    emblem_size = 26 * mm
+    pdf.drawImage(str(emblem_path), 14 * mm, height - 44 * mm, width=emblem_size, height=emblem_size, preserveAspectRatio=True, anchor='c')
 
-    # Header text
+    # Header text — centered on full page width
+    text_cx = width / 2
     pdf.setFillColor(_WHITE)
     pdf.setFont("Helvetica-Bold", 13)
-    pdf.drawCentredString(width / 2, height - 22 * mm, "GOVERNMENT OF INDIA")
+    pdf.drawCentredString(text_cx, height - 22 * mm, "GOVERNMENT OF INDIA")
     pdf.setFillColor(_LGOLD)
     pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawCentredString(width / 2, height - 29 * mm, "MINISTRY OF CITIZEN SERVICES & DOCUMENT MANAGEMENT")
+    pdf.drawCentredString(text_cx, height - 29 * mm, "MINISTRY OF CITIZEN SERVICES & DOCUMENT MANAGEMENT")
     pdf.setFillColor(_WHITE)
     pdf.setFont("Helvetica", 7.5)
-    pdf.drawCentredString(width / 2, height - 35 * mm, "Department of Citizen Services  |  e-Governance Division")
+    pdf.drawCentredString(text_cx, height - 36 * mm, "Department of Citizen Services  |  e-Governance Division")
 
     # Gold divider
     pdf.setStrokeColor(_LGOLD)
     pdf.setLineWidth(1.5)
-    pdf.line(18 * mm, height - 45 * mm, width - 18 * mm, height - 45 * mm)
+    pdf.line(18 * mm, height - 49 * mm, width - 18 * mm, height - 49 * mm)
 
     # Certificate title
     pdf.setFillColor(_NAVY)
     pdf.setFont("Helvetica-Bold", 18)
-    pdf.drawCentredString(width / 2, height - 56 * mm, application.certificate_type.upper())
+    pdf.drawCentredString(width / 2, height - 60 * mm, application.certificate_type.upper())
     title_w = stringWidth(application.certificate_type.upper(), "Helvetica-Bold", 18)
     pdf.setStrokeColor(_LGOLD)
     pdf.setLineWidth(0.8)
-    pdf.line(width / 2 - title_w / 2, height - 58.5 * mm, width / 2 + title_w / 2, height - 58.5 * mm)
+    pdf.line(width / 2 - title_w / 2, height - 62.5 * mm, width / 2 + title_w / 2, height - 62.5 * mm)
 
     # Cert number
     pdf.setFillColor(_DKGRAY)
     pdf.setFont("Helvetica", 8)
-    pdf.drawCentredString(width / 2, height - 63 * mm, f"Certificate No: CERT-{issued_at:%Y%m%d}-{application.application_id:06d}")
+    pdf.drawCentredString(width / 2, height - 67 * mm, f"Certificate No: CERT-{issued_at:%Y%m%d}-{application.application_id:06d}")
 
     # Details table
     lx, vx, row_h = 22 * mm, 75 * mm, 9 * mm
-    y = height - 76 * mm
+    y = height - 80 * mm
     rows = [
         ("Document ID",      document_id),
         ("Citizen Name",     application.citizen.full_name),
@@ -212,7 +212,7 @@ def _render_final_pdf(application, administrator, document_id, output_path, qr_p
     pdf.drawCentredString(width / 2, 20 * mm, "GOVERNMENT OF INDIA  -  DEPARTMENT OF CITIZEN SERVICES  -  e-GOVERNANCE DIVISION")
     pdf.setFillColor(_WHITE)
     pdf.setFont("Helvetica", 6.5)
-    pdf.drawCentredString(width / 2, 15 * mm, f"Document ID: {document_id}  |  Verify at: {current_app.config['VERIFICATION_BASE_URL']}/verify")
+    pdf.drawCentredString(width / 2, 15 * mm, f"Document ID: {document_id}")
 
     pdf.save()
     return issued_at
