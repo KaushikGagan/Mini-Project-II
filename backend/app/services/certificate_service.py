@@ -133,7 +133,6 @@ def _render_final_pdf(application, administrator, document_id, output_path, qr_p
     rows = [
         ("Document ID",       document_id),
         ("Citizen Name",      application.citizen.full_name),
-        ("Aadhaar Number",    application.citizen.aadhaar_number[:4] + "XXXXXXXX"),
         ("Certificate Type",  application.certificate_type),
         ("Application Ref",   application.reference_number),
         ("Date of Issue",     issued_at.strftime("%d %B %Y")),
@@ -170,10 +169,12 @@ def _render_final_pdf(application, administrator, document_id, output_path, qr_p
     # ── Footer section ───────────────────────────────────────────────────────
     footer_y = 52*mm
 
-    # QR code (left)
+    # QR code (left) — white background box so QR is scannable
+    pdf.setFillColor(_WHITE)
+    pdf.rect(20*mm, footer_y - 4*mm, 34*mm, 34*mm, stroke=0, fill=1)
     pdf.drawImage(str(qr_path), 22*mm, footer_y - 2*mm, width=30*mm, height=30*mm, mask="auto")
-    pdf.setFillColor(_LTGRAY); pdf.setFont("Helvetica", 6.5)
-    pdf.drawCentredString(37*mm, footer_y - 6*mm, "Scan to verify online")
+    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 6.5)
+    pdf.drawCentredString(37*mm, footer_y - 8*mm, "Scan to verify online")
 
     # Signature (right) — actual image
     sig_path = Path(current_app.root_path) / "static" / "images" / "signature.jpeg"
