@@ -8,6 +8,7 @@ from ..extensions import db
 from ..models import Administrator, Application, ApplicationDocument, AuditLog, Certificate, Citizen
 from ..services.audit_service import write_audit
 from ..services.certificate_service import CertificateIssuanceError, issue_certificate as issue_cert, reconcile_certificate as reconcile_cert
+from ..services.email_service import send_issuance_email, send_rejection_email, send_revocation_email
 from ..services.fabric_gateway_service import FabricGatewayError, FabricUnavailable, update_certificate_status
 from ..utils.decorators import admin_required
 
@@ -69,6 +70,7 @@ def review_application(reference_number):
     if previous != status: write_audit(f"Application {reference_number} status changed: {previous} → {status}", f"Admin: {administrator.employee_id}")
     if remarks: write_audit(f"Remarks added to application {reference_number}", f"Admin: {administrator.employee_id}")
     db.session.commit()
+    if status in {"Rejected", "Corrections Requested"}: send_rejection_email(application)
     flash("Application review saved.", "success")
     return redirect(url_for("admin.application_detail", reference_number=reference_number))
 
@@ -90,6 +92,7 @@ def issue_certificate_route(reference_number):
                 certificate = issue_cert(application, _current_admin())
             write_audit(f"Certificate {certificate.document_id} issued and registered on Fabric for application {reference_number}", f"Admin: {_current_admin().employee_id}")
             db.session.commit()
+            send_issuance_email(certificate)
             flash("Final certificate was registered on Fabric and is ready for download.", "success")
         except CertificateIssuanceError as error:
             flash(f"Certificate is not issued yet: {error}", "error")
@@ -109,6 +112,7 @@ def revoke_certificate(document_id):
             certificate.application.status = "Revoked"
             write_audit(f"Certificate {certificate.document_id} revoked on Fabric", f"Admin: {_current_admin().employee_id}")
             db.session.commit()
+            send_revocation_email(certificate)
             flash("Certificate was revoked on Fabric.", "success")
         except (FabricUnavailable, FabricGatewayError) as error:
             flash(f"Revocation was not confirmed: {error}", "error")
