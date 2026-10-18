@@ -29,7 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
     sendButton.disabled = true;
     resendButton.disabled = true;
     try {
-      const response = await fetch("/auth/request-otp", {method: "POST", headers: {Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded"}, body: new URLSearchParams({email})});
+      const response = await fetch("/auth/request-otp", {method: "POST", headers: {Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content}, body: new URLSearchParams({email})});
       const data = await response.json();
       if (!response.ok) {
         await popup("error", "Unable to send OTP", data.message);

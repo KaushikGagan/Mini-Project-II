@@ -7,7 +7,8 @@ from sqlalchemy import String, cast, or_
 from ..extensions import db
 from ..models import Administrator, Application, ApplicationDocument, AuditLog, Certificate, Citizen
 from ..services.audit_service import write_audit
-from ..services.certificate_service import generate_certificate
+from ..services.certificate_service import CertificateIssuanceError, issue_certificate as issue_cert, reconcile_certificate as reconcile_cert
+from ..services.fabric_gateway_service import FabricGatewayError, FabricUnavailable, update_certificate_status
 from ..utils.decorators import admin_required
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -74,17 +75,44 @@ def review_application(reference_number):
 
 @admin_bp.post("/applications/<reference_number>/issue")
 @admin_required
-def issue_certificate(reference_number):
+def issue_certificate_route(reference_number):
     application = Application.query.filter_by(reference_number=reference_number).first_or_404()
-    if application.status not in {"Approved", "Issued"}:
+    if application.status not in {"Approved", "Issuance Failed", "Issued"}:
         flash("Only approved applications can receive certificates.", "error")
     else:
-        certificate = generate_certificate(application, _current_admin())
-        application.status = "Issued"
-        write_audit(f"Certificate {certificate.document_id} generated for application {reference_number}", f"Admin: {_current_admin().employee_id}")
-        db.session.commit()
-        flash("Official certificate PDF generated and issued.", "success")
+        try:
+            if application.certificate and application.certificate.issuance_state == "Issuance Failed":
+                try:
+                    certificate = reconcile_cert(application.certificate)
+                except FabricGatewayError:
+                    certificate = issue_cert(application, _current_admin())
+            else:
+                certificate = issue_cert(application, _current_admin())
+            write_audit(f"Certificate {certificate.document_id} issued and registered on Fabric for application {reference_number}", f"Admin: {_current_admin().employee_id}")
+            db.session.commit()
+            flash("Final certificate was registered on Fabric and is ready for download.", "success")
+        except CertificateIssuanceError as error:
+            flash(f"Certificate is not issued yet: {error}", "error")
     return redirect(url_for("admin.application_detail", reference_number=reference_number))
+
+
+@admin_bp.post("/certificates/<document_id>/revoke")
+@admin_required
+def revoke_certificate(document_id):
+    certificate = Certificate.query.filter_by(document_id=document_id).first_or_404()
+    if certificate.issuance_state != "Issued":
+        flash("Only a Fabric-issued certificate can be revoked.", "error")
+    else:
+        try:
+            update_certificate_status(certificate.document_id, "Revoked")
+            certificate.issuance_state = "Revoked"
+            certificate.application.status = "Revoked"
+            write_audit(f"Certificate {certificate.document_id} revoked on Fabric", f"Admin: {_current_admin().employee_id}")
+            db.session.commit()
+            flash("Certificate was revoked on Fabric.", "success")
+        except (FabricUnavailable, FabricGatewayError) as error:
+            flash(f"Revocation was not confirmed: {error}", "error")
+    return redirect(url_for("admin.application_detail", reference_number=certificate.application.reference_number))
 
 
 @admin_bp.get("/documents/<int:document_id>/view")

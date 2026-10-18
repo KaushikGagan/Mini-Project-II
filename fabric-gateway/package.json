@@ -1,0 +1,1 @@
+{"name":"govverify-fabric-gateway","private":true,"version":"1.0.0","type":"module","engines":{"node":">=20"},"scripts":{"start":"node src/server.js"},"dependencies":{"@grpc/grpc-js":"^1.12.6","@hyperledger/fabric-gateway":"^1.7.1","express":"^5.1.0"}}

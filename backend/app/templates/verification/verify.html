@@ -1,0 +1,66 @@
+{% extends 'base.html' %}{% block title %}Verify Certificate | GovVerify{% endblock %}{% block content %}
+<section class="auth-wrap">
+  <div class="card form-card">
+    <p class="eyebrow">PUBLIC VERIFICATION</p>
+    <h1>Verify a Certificate</h1>
+    <p>Enter the Document ID printed on the certificate and upload the PDF to confirm it has not been tampered with.</p>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Document ID
+        <input name="document_id" value="{{ document_id or '' }}" placeholder="GOV-XXXX-YYYYMMDD-XXXXXXXX" required>
+      </label>
+      <label>Certificate PDF
+        <input name="certificate_pdf" type="file" accept="application/pdf,.pdf" required>
+      </label>
+      <button class="button full">Verify PDF Integrity</button>
+    </form>
+
+    {% if result %}
+    <section class="verify-result" style="margin-top:2rem;border-left:4px solid {{ '#16a34a' if result.outcome == 'Verified' else '#dc2626' }};padding:1.5rem;border-radius:0 8px 8px 0;background:rgba(255,255,255,0.03);">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;">
+        <span style="font-size:2.5rem;line-height:1;">{{ '✅' if result.outcome == 'Verified' else '❌' }}</span>
+        <div>
+          <h2 style="margin:0;color:{{ '#16a34a' if result.outcome == 'Verified' else '#dc2626' }};">{{ result.outcome }}</h2>
+          <p style="margin:0.25rem 0 0;font-size:0.9rem;opacity:0.75;">{{ result.message }}</p>
+        </div>
+      </div>
+      {% if result.record %}
+      <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+          <td style="padding:0.6rem 0;opacity:0.55;width:38%;">Document ID</td>
+          <td style="padding:0.6rem 0;font-family:monospace;font-size:0.85rem;">{{ result.record.documentId }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+          <td style="padding:0.6rem 0;opacity:0.55;">Certificate Type</td>
+          <td style="padding:0.6rem 0;">{{ result.record.certificateType }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+          <td style="padding:0.6rem 0;opacity:0.55;">Issued By</td>
+          <td style="padding:0.6rem 0;">{{ result.record.issuer }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+          <td style="padding:0.6rem 0;opacity:0.55;">Issue Date</td>
+          <td style="padding:0.6rem 0;">{{ result.record.issuedAt[:10] if result.record.issuedAt else '-' }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+          <td style="padding:0.6rem 0;opacity:0.55;">Status</td>
+          <td style="padding:0.6rem 0;">
+            <span style="background:{{ '#166534' if result.record.status == 'Active' else '#7f1d1d' }};color:{{ '#bbf7d0' if result.record.status == 'Active' else '#fecaca' }};padding:0.2rem 0.7rem;border-radius:999px;font-size:0.8rem;font-weight:600;">
+              {{ result.record.status }}
+            </span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0.6rem 0;opacity:0.55;vertical-align:top;">Blockchain TX</td>
+          <td style="padding:0.6rem 0;">
+            <span style="font-family:monospace;font-size:0.72rem;word-break:break-all;display:block;">{{ result.record.transactionId }}</span>
+            <span style="font-size:0.75rem;opacity:0.5;margin-top:0.3rem;display:block;">Hyperledger Fabric transaction ID — immutable proof this certificate was registered on the blockchain</span>
+          </td>
+        </tr>
+      </table>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

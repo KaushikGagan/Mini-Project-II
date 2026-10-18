@@ -3,7 +3,7 @@ from pathlib import Path
 from flask import Flask, render_template
 
 from config import Config
-from .extensions import db, mail, migrate
+from .extensions import csrf, db, limiter, mail, migrate
 
 
 def create_app(config_object=Config):
@@ -16,16 +16,20 @@ def create_app(config_object=Config):
     db.init_app(app)
     migrate.init_app(app, db)
     mail.init_app(app)
+    csrf.init_app(app)
+    limiter.init_app(app)
 
     from .routes.admin import admin_bp
     from .routes.auth import auth_bp
     from .routes.citizen import citizen_bp
     from .routes.main import main_bp
+    from .routes.verification import verification_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(citizen_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(verification_bp)
 
     @app.errorhandler(404)
     def not_found(_error):

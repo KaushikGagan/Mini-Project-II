@@ -1,0 +1,3 @@
+CERTS: [(3, 'certificate_GOV-CMSPC-20261018-11E4D11B.pdf', 'GOV-CMSPC-20261018-11E4D11B', 'APP-20261018-C9DCCCF3', 6, 'Approved')]
+DOCS: [(4, 5, 'APP-20261015-20BD4672/4893890441fb4cfd8929338a08d052d2_SSC_Memo.pdf', 'application/pdf'), (5, 6, 'APP-20261018-C9DCCCF3/9fe596c2cd19410e9f21c8102864c2c8_SSC_Memo.pdf', 'application/pdf')]
+DONE: certificates deleted, applications reset to Approved. Re-issue from admin panel.

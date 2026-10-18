@@ -25,6 +25,13 @@ class Config:
     MAIL_USERNAME = os.getenv("MAIL_USERNAME")
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER")
+    VERIFICATION_BASE_URL = os.getenv("VERIFICATION_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
+    MAX_VERIFICATION_PDF_SIZE = int(os.getenv("MAX_VERIFICATION_PDF_SIZE", str(5 * 1024 * 1024)))
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+    RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day;50 per hour")
+    FABRIC_GATEWAY_URL = os.getenv("FABRIC_GATEWAY_URL", "http://127.0.0.1:8081").rstrip("/")
+    FABRIC_GATEWAY_TOKEN = os.getenv("GATEWAY_API_TOKEN")
+    FABRIC_GATEWAY_TIMEOUT_SECONDS = float(os.getenv("FABRIC_GATEWAY_TIMEOUT_SECONDS", "12"))
 
     @classmethod
     def validate(cls):

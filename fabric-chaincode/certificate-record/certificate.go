@@ -1,0 +1,12 @@
+package main
+
+import ("encoding/json"; "fmt"; "time"; "github.com/hyperledger/fabric-contract-api-go/contractapi")
+type SmartContract struct { contractapi.Contract }
+type CertificateRecord struct { DocumentID string `json:"documentId"`; SHA256Hash string `json:"sha256Hash"`; CertificateType string `json:"certificateType"`; Issuer string `json:"issuer"`; IssuedAt string `json:"issuedAt"`; Status string `json:"status"`; Version int `json:"version"`; TransactionID string `json:"transactionId"` }
+func (s *SmartContract) Ping(ctx contractapi.TransactionContextInterface) (string,error) { return "ok",nil }
+func (s *SmartContract) RegisterCertificate(ctx contractapi.TransactionContextInterface,id,sha256,typ,issuer,issuedAt string)(*CertificateRecord,error){ exists,err:=ctx.GetStub().GetState(id); if err!=nil{return nil,err}; if exists!=nil{return nil,fmt.Errorf("certificate %s already exists",id)}; record:=CertificateRecord{id,sha256,typ,issuer,issuedAt,"Active",1,ctx.GetStub().GetTxID()}; data,err:=json.Marshal(record); if err!=nil{return nil,err}; if err=ctx.GetStub().PutState(id,data);err!=nil{return nil,err}; return &record,nil }
+func (s *SmartContract) GetCertificate(ctx contractapi.TransactionContextInterface,id string)(*CertificateRecord,error){ data,err:=ctx.GetStub().GetState(id);if err!=nil{return nil,err};if data==nil{return nil,fmt.Errorf("certificate %s not found",id)};var r CertificateRecord;if err=json.Unmarshal(data,&r);err!=nil{return nil,err};return &r,nil }
+func (s *SmartContract) VerifyCertificate(ctx contractapi.TransactionContextInterface,id,sha256 string)(*CertificateRecord,error){ return s.GetCertificate(ctx,id) }
+func (s *SmartContract) UpdateCertificateStatus(ctx contractapi.TransactionContextInterface,id,status string)(*CertificateRecord,error){ r,err:=s.GetCertificate(ctx,id);if err!=nil{return nil,err};r.Status=status;r.Version++;r.TransactionID=ctx.GetStub().GetTxID();data,_:=json.Marshal(r);err=ctx.GetStub().PutState(id,data);return r,err }
+func (s *SmartContract) RevokeCertificate(ctx contractapi.TransactionContextInterface,id string)(*CertificateRecord,error){return s.UpdateCertificateStatus(ctx,id,"Revoked")}
+func main(){ chaincode,err:=contractapi.NewChaincode(new(SmartContract));if err!=nil{panic(err)};chaincode.Info.Title="GovVerify Certificate Records";chaincode.Info.Version="1.0.0";if err:=chaincode.Start();err!=nil{panic(err)};_ = time.Now }

@@ -8,4 +8,7 @@ backend/uploads/*
 backend/generated_certificates/*
 !backend/generated_certificates/.gitkeep
 .pytest_cache/
+fabric-gateway/node_modules/
+fabric-gateway/.env
+fabric-gateway/wallet/
 

@@ -81,6 +81,10 @@ python run.py
 
 Copy `.env.example` to `.env` on another machine and provide its own `SECRET_KEY` and PostgreSQL `DATABASE_URL`. Never commit `.env`, uploads, generated certificates, real user data, or Fabric credentials.
 
+## Subsequent update — Steps 8–12
+
+The current implementation adds final-PDF SHA-256 hashing, QR generation, a public verification route, recoverable Fabric issuance fields, a private Node Fabric Gateway service, Go certificate-record chaincode, CSRF protection, and rate limiting. Migration `8a0e32d1b5c1` is applied. Automated tests pass, but live Fabric deployment is not claimed because this development session could not access WSL/Docker. See `FINAL_HANDOFF.md` and `README.md` for the exact status and manual Fabric deployment steps.
+
 ## Current progress and next phase
 
 Phases 1–3 are complete. Phase 4 should implement the actual citizen document-application form and secure supporting-document uploads, followed by administrator review/approval workflow. Certificate PDF, QR code, SHA-256 hashing, and Hyperledger Fabric gateway integration must remain a later phase as requested.
