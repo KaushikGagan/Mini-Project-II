@@ -18,36 +18,188 @@ from .qr_service import create_certificate_qr, verification_url
 
 class CertificateIssuanceError(RuntimeError): pass
 
+# Colours
+_NAVY   = colors.HexColor("#0D2137")
+_GOLD   = colors.HexColor("#B8860B")
+_LGOLD  = colors.HexColor("#D4AF37")
+_CREAM  = colors.HexColor("#FFFDF5")
+_DKGRAY = colors.HexColor("#374151")
+_LTGRAY = colors.HexColor("#9CA3AF")
+_WHITE  = colors.white
+
 def _document_id(certificate_type):
     abbr = ''.join(c for c in ''.join(word[0] for word in certificate_type.split()).upper() if c.isalpha())
     return f"GOV-{abbr}-{datetime.now(timezone.utc):%Y%m%d}-{uuid4().hex[:8].upper()}"
+
+
+def _draw_goi_emblem(pdf, cx, cy, r=14):
+    """Draw a simplified Ashoka-style circular emblem in gold."""
+    # Outer ring
+    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(1.5)
+    pdf.circle(cx, cy, r*mm, stroke=1, fill=0)
+    pdf.circle(cx, cy, (r-2)*mm, stroke=1, fill=0)
+    # Spokes (24 Ashoka chakra spokes)
+    import math
+    pdf.setLineWidth(0.6)
+    for i in range(24):
+        angle = math.radians(i * 15)
+        x1 = cx + (r-2)*mm * math.cos(angle)
+        y1 = cy + (r-2)*mm * math.sin(angle)
+        x2 = cx + 4*mm * math.cos(angle)
+        y2 = cy + 4*mm * math.sin(angle)
+        pdf.line(x1, y1, x2, y2)
+    # Inner hub
+    pdf.setFillColor(_LGOLD)
+    pdf.circle(cx, cy, 3.5*mm, stroke=0, fill=1)
+    # "INDIA" text below emblem
+    pdf.setFillColor(_NAVY); pdf.setFont("Helvetica-Bold", 6)
+    pdf.drawCentredString(cx, cy - (r+4)*mm, "INDIA")
+
+
+def _wrap_text(pdf, text, x, y, max_width, font, size, line_height):
+    """Draw wrapped text, return final y."""
+    pdf.setFont(font, size)
+    line = ""
+    for word in text.split():
+        trial = f"{line} {word}".strip()
+        if stringWidth(trial, font, size) > max_width:
+            pdf.drawString(x, y, line)
+            y -= line_height
+            line = word
+        else:
+            line = trial
+    if line:
+        pdf.drawString(x, y, line)
+        y -= line_height
+    return y
+
 
 def _render_final_pdf(application, administrator, document_id, output_path, qr_path):
     issued_at = datetime.now(timezone.utc)
     pdf = canvas.Canvas(str(output_path), pagesize=A4)
     width, height = A4
-    pdf.setTitle(f"{application.certificate_type} - {document_id}")
-    pdf.setStrokeColor(colors.HexColor("#2563EB")); pdf.setLineWidth(2); pdf.rect(14*mm,14*mm,width-28*mm,height-28*mm)
-    pdf.setFillColor(colors.HexColor("#0B1120")); pdf.setFont("Helvetica-Bold",17); pdf.drawCentredString(width/2,height-29*mm,"GOVERNMENT DOCUMENT MANAGEMENT SYSTEM")
-    pdf.setFillColor(colors.HexColor("#2563EB")); pdf.setFont("Helvetica-Bold",10); pdf.drawCentredString(width/2,height-36*mm,"DEPARTMENT OF CITIZEN SERVICES")
-    pdf.setStrokeColor(colors.HexColor("#64748B")); pdf.rect(18*mm,height-55*mm,24*mm,16*mm)
-    pdf.setFillColor(colors.HexColor("#475569")); pdf.setFont("Helvetica",7); pdf.drawCentredString(30*mm,height-47*mm,"GOVERNMENT"); pdf.drawCentredString(30*mm,height-51*mm,"LOGO")
-    pdf.setFillColor(colors.HexColor("#0B1120")); pdf.setFont("Helvetica-Bold",20); pdf.drawCentredString(width/2,height-66*mm,application.certificate_type.upper())
-    pdf.setFont("Helvetica",9); pdf.drawCentredString(width/2,height-73*mm,f"Certificate No: CERT-{issued_at:%Y%m%d}-{application.application_id:06d}")
-    x, y = 28*mm, height-94*mm
-    for label, value in [("Document ID:", document_id),("Citizen Name:",application.citizen.full_name),("Application ID:",application.reference_number)]:
-        pdf.setFont("Helvetica-Bold",10); pdf.drawString(x,y,label); pdf.setFont("Helvetica",10); pdf.drawString(x+35*mm,y,value); y -= 10*mm
-    y -= 10*mm; content = f"This is to certify that the application submitted by {application.citizen.full_name} has been reviewed and approved by the Department of Citizen Services. This {application.certificate_type.lower()} is issued for official purposes."
-    pdf.setFont("Helvetica",11); line=""
-    for word in content.split():
-        trial=f"{line} {word}".strip()
-        if stringWidth(trial,"Helvetica",11)>width-56*mm: pdf.drawString(x,y,line); y-=7*mm; line=word
-        else: line=trial
-    pdf.drawString(x,y,line)
-    pdf.setFont("Helvetica",9); pdf.drawString(x,57*mm,f"Issue Date: {issued_at:%d %B %Y}"); pdf.drawRightString(width-28*mm,57*mm,f"Authorized by: {administrator.name}")
-    pdf.setStrokeColor(colors.HexColor("#475569")); pdf.line(width-82*mm,39*mm,width-28*mm,39*mm); pdf.setFont("Helvetica",8); pdf.drawRightString(width-28*mm,34*mm,"Authorized Signature")
-    pdf.drawImage(str(qr_path),28*mm,22*mm,width=28*mm,height=28*mm,mask="auto"); pdf.setFont("Helvetica",7); pdf.drawString(28*mm,18*mm,"Scan to verify this certificate")
-    pdf.save(); return issued_at
+    pdf.setTitle(f"{application.certificate_type} — {document_id}")
+
+    # ── Background ──────────────────────────────────────────────────────────
+    pdf.setFillColor(_CREAM)
+    pdf.rect(0, 0, width, height, stroke=0, fill=1)
+
+    # ── Outer decorative border (double line) ────────────────────────────────
+    pdf.setStrokeColor(_NAVY); pdf.setLineWidth(3)
+    pdf.rect(10*mm, 10*mm, width-20*mm, height-20*mm, stroke=1, fill=0)
+    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(1)
+    pdf.rect(13*mm, 13*mm, width-26*mm, height-26*mm, stroke=1, fill=0)
+
+    # ── Header band ─────────────────────────────────────────────────────────
+    pdf.setFillColor(_NAVY)
+    pdf.rect(10*mm, height-42*mm, width-20*mm, 29*mm, stroke=0, fill=1)
+
+    # GoI emblem (left of header)
+    _draw_goi_emblem(pdf, 30*mm, height-27.5*mm, r=11)
+
+    # Header text
+    pdf.setFillColor(_WHITE)
+    pdf.setFont("Helvetica-Bold", 13)
+    pdf.drawCentredString(width/2, height-22*mm, "GOVERNMENT OF INDIA")
+    pdf.setFillColor(_LGOLD)
+    pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawCentredString(width/2, height-29*mm, "MINISTRY OF CITIZEN SERVICES & DOCUMENT MANAGEMENT")
+    pdf.setFillColor(_WHITE)
+    pdf.setFont("Helvetica", 7.5)
+    pdf.drawCentredString(width/2, height-35*mm, "Department of Citizen Services  |  e-Governance Division")
+
+    # GoI emblem (right mirror)
+    _draw_goi_emblem(pdf, width-30*mm, height-27.5*mm, r=11)
+
+    # ── Gold divider line ────────────────────────────────────────────────────
+    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(1.5)
+    pdf.line(18*mm, height-45*mm, width-18*mm, height-45*mm)
+
+    # ── Certificate title ────────────────────────────────────────────────────
+    pdf.setFillColor(_NAVY)
+    pdf.setFont("Helvetica-Bold", 18)
+    pdf.drawCentredString(width/2, height-56*mm, application.certificate_type.upper())
+    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(0.8)
+    title_w = stringWidth(application.certificate_type.upper(), "Helvetica-Bold", 18)
+    pdf.line(width/2 - title_w/2, height-58.5*mm, width/2 + title_w/2, height-58.5*mm)
+
+    # Cert number
+    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 8)
+    pdf.drawCentredString(width/2, height-63*mm, f"Certificate No: CERT-{issued_at:%Y%m%d}-{application.application_id:06d}")
+
+    # ── Details table ────────────────────────────────────────────────────────
+    lx, vx, row_h = 22*mm, 75*mm, 9*mm
+    y = height - 76*mm
+    rows = [
+        ("Document ID",       document_id),
+        ("Citizen Name",      application.citizen.full_name),
+        ("Aadhaar Number",    application.citizen.aadhaar_number[:4] + "XXXXXXXX"),
+        ("Certificate Type",  application.certificate_type),
+        ("Application Ref",   application.reference_number),
+        ("Date of Issue",     issued_at.strftime("%d %B %Y")),
+    ]
+    for label, value in rows:
+        pdf.setFillColor(_NAVY);   pdf.setFont("Helvetica-Bold", 9.5); pdf.drawString(lx, y, label + ":")
+        pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 9.5);      pdf.drawString(vx, y, value)
+        y -= row_h
+
+    # ── Divider ──────────────────────────────────────────────────────────────
+    y -= 3*mm
+    pdf.setStrokeColor(_LGOLD); pdf.setLineWidth(0.6)
+    pdf.line(18*mm, y, width-18*mm, y)
+    y -= 7*mm
+
+    # ── Body text ────────────────────────────────────────────────────────────
+    body = (
+        f"This is to certify that {application.citizen.full_name} has submitted an application "
+        f"for the issuance of a {application.certificate_type}. The application has been duly "
+        f"reviewed and verified by the competent authority of the Department of Citizen Services, "
+        f"Government of India. This certificate is issued for official and legal purposes and is "
+        f"valid subject to the terms and conditions of the issuing authority."
+    )
+    pdf.setFillColor(_DKGRAY)
+    y = _wrap_text(pdf, body, 22*mm, y, width-44*mm, "Helvetica", 9.5, 6*mm)
+
+    # ── Blockchain notice ────────────────────────────────────────────────────
+    y -= 4*mm
+    pdf.setFillColor(_NAVY); pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(22*mm, y, "Blockchain Registration:")
+    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 8)
+    pdf.drawString(75*mm, y, "This certificate is immutably registered on Hyperledger Fabric.")
+
+    # ── Footer section ───────────────────────────────────────────────────────
+    footer_y = 52*mm
+
+    # QR code (left)
+    pdf.drawImage(str(qr_path), 22*mm, footer_y - 2*mm, width=30*mm, height=30*mm, mask="auto")
+    pdf.setFillColor(_LTGRAY); pdf.setFont("Helvetica", 6.5)
+    pdf.drawCentredString(37*mm, footer_y - 6*mm, "Scan to verify online")
+
+    # Signature (right) — actual image
+    sig_path = Path(current_app.root_path) / "static" / "images" / "signature.jpeg"
+    sig_w, sig_h = 52*mm, 18*mm
+    sig_x = width - 22*mm - sig_w
+    sig_y = footer_y + 6*mm
+    if sig_path.exists():
+        pdf.drawImage(str(sig_path), sig_x, sig_y, width=sig_w, height=sig_h, mask="auto")
+    pdf.setStrokeColor(_NAVY); pdf.setLineWidth(0.6)
+    pdf.line(sig_x, sig_y - 1*mm, sig_x + sig_w, sig_y - 1*mm)
+    pdf.setFillColor(_NAVY); pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawCentredString(sig_x + sig_w/2, sig_y - 5*mm, administrator.name)
+    pdf.setFillColor(_DKGRAY); pdf.setFont("Helvetica", 7)
+    pdf.drawCentredString(sig_x + sig_w/2, sig_y - 9*mm, "Authorised Signatory")
+    pdf.drawCentredString(sig_x + sig_w/2, sig_y - 13*mm, "Department of Citizen Services, GoI")
+
+    # ── Bottom gold band ─────────────────────────────────────────────────────
+    pdf.setFillColor(_NAVY)
+    pdf.rect(10*mm, 10*mm, width-20*mm, 16*mm, stroke=0, fill=1)
+    pdf.setFillColor(_LGOLD); pdf.setFont("Helvetica-Bold", 7)
+    pdf.drawCentredString(width/2, 20*mm, "GOVERNMENT OF INDIA  —  DEPARTMENT OF CITIZEN SERVICES  —  e-GOVERNANCE DIVISION")
+    pdf.setFillColor(_WHITE); pdf.setFont("Helvetica", 6.5)
+    pdf.drawCentredString(width/2, 15*mm, f"Document ID: {document_id}  |  Verify at: {current_app.config['VERIFICATION_BASE_URL']}/verify")
+
+    pdf.save()
+    return issued_at
 
 def _image_to_pdf(image_path: Path, output_path: Path):
     """Convert an image file to a single-page PDF."""
