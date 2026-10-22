@@ -11,4 +11,5 @@ backend/generated_certificates/*
 fabric-gateway/node_modules/
 fabric-gateway/.env
 fabric-gateway/wallet/
+fabric-chaincode/certificate-record/vendor/github.com/go-openapi/spec/appveyor.yml
 
